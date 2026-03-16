@@ -1,0 +1,354 @@
+# coding=utf-8
+# Copyright 2024 The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import gc
+import logging
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+
+import pytest
+from executorch.extension.pybindings.portable_lib import ExecuTorchModule
+from transformers import AutoProcessor, AutoTokenizer
+from transformers.testing_utils import slow
+
+from optimum.executorch import ExecuTorchModelForCausalLM, ExecuTorchModelForMultiModalToText
+
+from ..utils import check_causal_lm_output_quality, check_multimodal_output_quality
+
+
+is_linux_ci = sys.platform.startswith("linux") and os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+class ExecuTorchModelIntegrationTest(unittest.TestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    @slow
+    @pytest.mark.run_slow
+    def test_gemma3_export_to_executorch(self):
+        # TODO: Until https://github.com/huggingface/optimum/issues/2127 is fixed, have to use non-gated model on CI
+        # model_id = "google/gemma-3-1b-it"
+        model_id = "unsloth/gemma-3-1b-it"
+        task = "text-generation"
+        recipe = "xnnpack"
+        with tempfile.TemporaryDirectory() as tempdir:
+            out_dir = f"{tempdir}/executorch"
+            subprocess.run(
+                f"optimum-cli export executorch \
+                    --model {model_id} \
+                    --task {task} \
+                    --recipe {recipe} \
+                    --output_dir {tempdir}/executorch \
+                    --use_custom_sdpa \
+                    --qlinear 8da4w \
+                    --qembedding 8w",
+                shell=True,
+                check=True,
+            )
+            pte_full_path = f"{out_dir}/model.pte"
+            self.assertTrue(os.path.exists(pte_full_path))
+
+            # Explicitly delete the PTE file to free up disk space
+            if os.path.exists(pte_full_path):
+                os.remove(pte_full_path)
+            gc.collect()
+
+    def _helper_gemma3_text_generation(self, recipe: str):
+        # TODO: Until https://github.com/huggingface/optimum/issues/2127 is fixed, have to use non-gated model on CI
+        # model_id = "google/gemma-3-1b-it"
+        model_id = "unsloth/gemma-3-1b-it"
+        model = ExecuTorchModelForCausalLM.from_pretrained(model_id, recipe=recipe)
+        self.assertIsInstance(model, ExecuTorchModelForCausalLM)
+        self.assertIsInstance(model.model, ExecuTorchModule)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        generated_text = model.text_generation(
+            tokenizer=tokenizer,
+            prompt="Write a poem about a machine learning.",
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        # Free memory before loading eager for quality check
+        del model
+        del tokenizer
+        gc.collect()
+
+        self.assertTrue(check_causal_lm_output_quality(model_id, generated_tokens))
+
+    @slow
+    @pytest.mark.run_slow
+    @pytest.mark.skipif(is_linux_ci, reason="OOM on linux runner")
+    def test_gemma3_text_generation(self):
+        self._helper_gemma3_text_generation(recipe="xnnpack")
+
+    @slow
+    @pytest.mark.run_slow
+    @pytest.mark.portable
+    @pytest.mark.skipif(is_linux_ci, reason="OOM on linux runner")
+    def test_gemma3_text_generation_portable(self):
+        self._helper_gemma3_text_generation(recipe="portable")
+
+    @slow
+    @pytest.mark.run_slow
+    @pytest.mark.skipif(is_linux_ci, reason="OOM on linux runner")
+    def test_gemma3_text_generation_with_custom_sdpa(self):
+        # TODO: Until https://github.com/huggingface/optimum/issues/2127 is fixed, have to use non-gated model on CI
+        # model_id = "google/gemma-3-1b-it"
+        model_id = "unsloth/gemma-3-1b-it"
+        prompt = "Write a poem about a machine learning."
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+        # ExecuTorch model + custom sdpa
+        model = ExecuTorchModelForCausalLM.from_pretrained(
+            model_id,
+            recipe="xnnpack",
+            attn_implementation="custom_sdpa",
+        )
+        self.assertIsInstance(model, ExecuTorchModelForCausalLM)
+        self.assertIsInstance(model.model, ExecuTorchModule)
+
+        generated_text = model.text_generation(
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        # Free memory before loading eager for quality check
+        del model
+        del tokenizer
+        gc.collect()
+
+        self.assertTrue(check_causal_lm_output_quality(model_id, generated_tokens))
+
+    @slow
+    @pytest.mark.run_slow
+    def test_gemma3_text_generation_with_custom_sdpa_float16(self):
+        # TODO: Until https://github.com/huggingface/optimum/issues/2127 is fixed, have to use non-gated model on CI
+        # model_id = "google/gemma-3-1b-it"
+        model_id = "unsloth/gemma-3-1b-it"
+        prompt = "Write a poem about a machine learning."
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        kwargs = {"dtype": "float16"}
+
+        # ExecuTorch model + custom sdpa + float16
+        model = ExecuTorchModelForCausalLM.from_pretrained(
+            model_id,
+            recipe="xnnpack",
+            attn_implementation="custom_sdpa",
+            **kwargs,
+        )
+        self.assertIsInstance(model, ExecuTorchModelForCausalLM)
+        self.assertIsInstance(model.model, ExecuTorchModule)
+
+        generated_text = model.text_generation(
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        # Free memory before loading eager for quality check
+        del model
+        del tokenizer
+        gc.collect()
+
+        self.assertTrue(check_causal_lm_output_quality(model_id, generated_tokens))
+
+    @slow
+    @pytest.mark.run_slow
+    def test_gemma3_text_generation_with_custom_sdpa_8da4w_8we(self):
+        # TODO: Until https://github.com/huggingface/optimum/issues/2127 is fixed, have to use non-gated model on CI
+        # model_id = "google/gemma-3-1b-it"
+        model_id = "unsloth/gemma-3-1b-it"
+        prompt = "Write a poem about a machine learning."
+
+        # ExecuTorch model + custom sdpa + 8da4w linear quantization + int8 embedding quantization
+        kwargs = {"qlinear": "8da4w", "qembedding": "8w"}
+        model = ExecuTorchModelForCausalLM.from_pretrained(
+            model_id,
+            recipe="xnnpack",
+            attn_implementation="custom_sdpa",
+            **kwargs,
+        )
+        self.assertIsInstance(model, ExecuTorchModelForCausalLM)
+        self.assertIsInstance(model.model, ExecuTorchModule)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        generated_text = model.text_generation(
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        # Free memory before loading eager for quality check
+        del model
+        del tokenizer
+        gc.collect()
+
+        self.assertTrue(check_causal_lm_output_quality(model_id, generated_tokens))
+
+    @slow
+    @pytest.mark.run_slow
+    def test_gemma3_text_generation_with_custom_sdpa_kv_cache_8da4w_8we(self):
+        # TODO: Until https://github.com/huggingface/optimum/issues/2127 is fixed, have to use non-gated model on CI
+        # model_id = "google/gemma-3-1b-it"
+        model_id = "unsloth/gemma-3-1b-it"
+        prompt = "Write a poem about a machine learning."
+
+        # ExecuTorch model + custom sdpa + 8da4w linear quantization + int8 embedding quantization
+        kwargs = {"qlinear": "8da4w", "qembedding": "8w"}
+        model = ExecuTorchModelForCausalLM.from_pretrained(
+            model_id,
+            recipe="xnnpack",
+            attn_implementation="custom_sdpa",
+            use_custom_kv_cache=True,
+            **kwargs,
+        )
+        self.assertIsInstance(model, ExecuTorchModelForCausalLM)
+        self.assertIsInstance(model.model, ExecuTorchModule)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        generated_text = model.text_generation(
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        # Free memory before loading eager for quality check
+        del model
+        del tokenizer
+        gc.collect()
+
+        self.assertTrue(check_causal_lm_output_quality(model_id, generated_tokens))
+
+    def test_gemma3_270m_text_generation_with_custom_sdpa_8da4w_8we(self):
+        model_id = "unsloth/gemma-3-270m-it"
+        prompt = "Are seals friendly?"
+
+        # ExecuTorch model + custom sdpa + 8da4w linear quantization + int8 embedding quantization
+        kwargs = {"qlinear": "8da4w", "qembedding": "8w"}
+        model = ExecuTorchModelForCausalLM.from_pretrained(
+            model_id,
+            recipe="xnnpack",
+            attn_implementation="custom_sdpa",
+            **kwargs,
+        )
+        self.assertIsInstance(model, ExecuTorchModelForCausalLM)
+        self.assertIsInstance(model.model, ExecuTorchModule)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        generated_text = model.text_generation(
+            tokenizer=tokenizer,
+            prompt=prompt,
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        # Free memory before loading eager for quality check
+        del model
+        del tokenizer
+        gc.collect()
+
+        self.assertTrue(check_causal_lm_output_quality(model_id, generated_tokens))
+
+    @slow
+    @pytest.mark.run_slow
+    @pytest.mark.skipif(is_linux_ci, reason="OOM")
+    def test_gemma3_image_vision_with_custom_sdpa_kv_cache_8da4w_8we(self):
+        model_id = "google/gemma-3-4b-it"
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+        processor = AutoProcessor.from_pretrained(model_id)
+        image_url = "https://llava-vl.github.io/static/images/view.jpg"
+        conversation = [
+            {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "url": image_url},
+                    {
+                        "type": "text",
+                        "text": "What are the things I should be cautious about when I visit here?",
+                    },
+                ],
+            },
+        ]
+
+        model = ExecuTorchModelForMultiModalToText.from_pretrained(
+            model_id,
+            recipe="xnnpack",
+            task="multimodal-text-to-text",
+            use_custom_sdpa=True,
+            use_custom_kv_cache=True,
+            qlinear="8da4w",
+            qlinear_group_size=32,
+            qlinear_encoder="8da4w,8da8w",
+            qlinear_encoder_group_size=32,
+            qembedding="8w",
+            qembedding_encoder="8w",
+        )
+
+        # Check file size is approximately 3GB (allow 1% tolerance)
+        file_size_bytes = os.path.getsize(os.path.join(model._temp_dir.name, "model.pte"))
+        file_size_gb = file_size_bytes / (1024**3)
+        expected_size_gb = 2.96
+        tolerance = 0.01  # 1% tolerance
+
+        logging.info(f"model.pte size: {file_size_gb:.2f} GB")
+        self.assertAlmostEqual(
+            file_size_gb,
+            expected_size_gb,
+            delta=expected_size_gb * tolerance,
+            msg=f"Expected file size ~{expected_size_gb}GB, but got {file_size_gb:.2f}GB",
+        )
+
+        # Generate
+        generated_text = model.text_generation(
+            processor=processor,
+            tokenizer=tokenizer,
+            input_conversation=conversation,
+            max_seq_len=64,
+        )
+        logging.info(f"\nGenerated text:\n\t{generated_text}")
+        generated_tokens = tokenizer(generated_text, return_tensors="pt").input_ids
+
+        del model
+        del tokenizer
+        gc.collect()
+
+        # Should be something like: 'Okay, let's analyze this image and discuss potential
+        # cautions for visiting this location. Based on the picture, we're looking at a
+        # serene lake scene with mountains in the background, a wooden pier extending into
+        # the water, and a generally calm atmosphere.'
+        self.assertTrue("serene" in generated_text)
+        self.assertTrue("lake" in generated_text)
+        self.assertTrue(
+            check_multimodal_output_quality(model_id, generated_tokens, conversation, max_perplexity_threshold=10)
+        )

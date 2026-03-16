@@ -1,0 +1,69 @@
+name: ExecuTorch E2E / Python - Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  discover-tests:
+    runs-on: ubuntu-22.04
+    outputs:
+      model_names: ${{ steps.set-matrix.outputs.model_names }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Find model tests
+        id: set-matrix
+        run: |
+          # Find all test files and extract model names correctly
+          MODEL_NAMES=$(find tests/models -name "test_modeling_*.py" -type f | sed 's|tests/models/test_modeling_||' | sed 's|\.py$||' | paste -sd "," -)
+          echo "model_names=[\"${MODEL_NAMES//,/\",\"}\"]" >> $GITHUB_OUTPUT
+
+          # Display all discovered models
+          echo "Discovered models:"
+          echo "$MODEL_NAMES" | tr ',' '\n' | sort | awk '{print "- " $0}'
+
+  run-tests:
+    needs: discover-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        test-modeling: ${{ fromJson(needs.discover-tests.outputs.model_names) }}
+        executorch-version: ['1.0.0', 'nightly']
+        python-version: ['3.11']
+        # os: [macos-15, ubuntu-22.04]  # TODO(#122): Re-enable the mac tests after fixing seg fault.
+        os: [ubuntu-22.04]
+
+    # Custom job name, now shortened and cleaner
+    name: ${{ matrix.test-modeling }} (et=${{ matrix.executorch-version }}, py=${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    env:
+      MODEL_NAME: ${{ matrix.test-modeling }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies for ExecuTorch
+        run: |
+          # Clean up cache to save space
+          pip cache purge || true
+          rm -rf ~/.cache/huggingface/hub/* || true
+
+          if [ "${{ matrix.executorch-version }}" == "nightly" ]; then
+            python install_dev.py
+          else
+            # Use CPU-only torch to avoid CUDA dependencies (saves ~5GB)
+            pip install --no-cache-dir '.[dev]' executorch==${{ matrix.executorch-version }} \
+              --extra-index-url https://download.pytorch.org/whl/cpu
+          fi
+          pip list
+      - name: Run tests
+        run: |
+          RUN_SLOW=1 pytest tests/models/test_modeling_${{ matrix.test-modeling }}.py -s -vvvv --durations=0 --log-cli-level=INFO
