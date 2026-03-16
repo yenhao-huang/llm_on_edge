@@ -52,7 +52,6 @@ numba==0.64.0
 numpy==2.4.3
 omegaconf==2.3.0
 optimum==2.0.0
-optimum-executorch @ file:///Users/yenhaohuang/Desktop/side_project/edge_devices/llm-on-iphone/optimum-executorch
 packaging==26.0
 pandas==3.0.1
 parameterized==0.9.0

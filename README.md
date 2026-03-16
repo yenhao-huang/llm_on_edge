@@ -13,6 +13,9 @@ HuggingFace model → optimum-executorch → ExecuTorch (.pte) → etLLM iOS/mac
 ```bash
 uv venv llm_on_ios --python 3.12
 pip install -r requirements.txt
+cd optimum-executorch
+pip install '.[dev]'
+
 # or activate existing venv
 source /Users/yenhaohuang/Desktop/python-venvs/llm_on_ios/bin/activate
 ```
