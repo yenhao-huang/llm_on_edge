@@ -16,6 +16,7 @@ import AppKit
 
 struct MessageView: View {
   let message: Message
+  @ObservedObject var speechManager: SpeechManager
 
   var body: some View {
     let isAssistant = {
@@ -100,6 +101,16 @@ struct MessageView: View {
                   }) {
                     Text("Copy")
                     Image(systemName: "doc.on.doc")
+                  }
+                  if isAssistant {
+                    Button(action: { speechManager.speak(message.text) }) {
+                      Text("Speak")
+                      Image(systemName: "speaker.wave.2")
+                    }
+                    Button(action: { speechManager.stop() }) {
+                      Text("Stop Speaking")
+                      Image(systemName: "speaker.slash")
+                    }
                   }
                 }
             }

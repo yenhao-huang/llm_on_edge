@@ -194,6 +194,8 @@ struct ContentView: View {
   @StateObject private var resourceManager = ResourceManager()
   @StateObject private var resourceMonitor = ResourceMonitor()
   @StateObject private var logManager = LogManager()
+  @StateObject private var speechManager = SpeechManager()
+  @State private var autoSpeak = false
   @State private var isImagePickerPresented = false
   @State private var selectedImage: PlatformImage?
   #if os(iOS)
@@ -343,7 +345,20 @@ struct ContentView: View {
           .cornerRadius(8)
         }
         .buttonStyle(.plain)
-        
+
+        Button(action: { autoSpeak.toggle() }) {
+          HStack {
+            Image(systemName: autoSpeak ? "speaker.wave.2.fill" : "speaker.slash")
+              .foregroundColor(autoSpeak ? .blue : .gray)
+            Text("Auto Speak")
+            Spacer()
+          }
+          .padding(8)
+          .background(Color.gray.opacity(0.1))
+          .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+
         Spacer()
       }
       .padding(.horizontal)
@@ -352,7 +367,7 @@ struct ContentView: View {
     } detail: {
       // Main chat area
       VStack(spacing: 0) {
-        MessageListView(messages: $messages)
+        MessageListView(messages: $messages, speechManager: speechManager)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         
         // Input bar
@@ -462,10 +477,11 @@ struct ContentView: View {
           messages.append(Message(type: .info, text: "Error creating content directories: \(error.localizedDescription)"))
         }
       }
+      Task { await speechManager.loadModel() }
     }
   }
   #endif
-  
+
   #if os(iOS)
   @ViewBuilder
   private var iOSBody: some View {
@@ -499,7 +515,7 @@ struct ContentView: View {
             }
           }
 
-          MessageListView(messages: $messages)
+          MessageListView(messages: $messages, speechManager: speechManager)
             .simultaneousGesture(
               DragGesture().onChanged { value in
                 if value.translation.height > 10 {
@@ -636,6 +652,10 @@ struct ContentView: View {
             Button(action: { showingLogs = true }) {
               Image(systemName: "list.bullet.rectangle")
             }
+            Button(action: { autoSpeak.toggle() }) {
+              Image(systemName: autoSpeak ? "speaker.wave.2.fill" : "speaker.slash")
+                .foregroundColor(autoSpeak ? .blue : .primary)
+            }
           }
       )
       .sheet(isPresented: $showingLogs) {
@@ -661,6 +681,7 @@ struct ContentView: View {
             messages.append(Message(type: .info, text: "Error creating content directories: \(error.localizedDescription)"))
           }
         }
+        Task { await speechManager.loadModel() }
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
@@ -724,6 +745,16 @@ struct ContentView: View {
         DispatchQueue.main.async {
           isGenerating = false
           selectedImage = nil
+          if autoSpeak, let last = messages.last {
+            switch last.type {
+            case .llamagenerated, .llavagenerated, .qwengenerated, .phi4generated, .gemma3generated, .smollm3generated, .voxtralgenerated:
+              if !last.text.isEmpty {
+                speechManager.speak(last.text)
+              }
+            default:
+              break
+            }
+          }
         }
       }
 

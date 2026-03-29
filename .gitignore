@@ -2,3 +2,7 @@ deprecated
 executorch
 qwen3_0.6b_executorch
 .DS_Store
+Qwen3-TTS
+.claude
+medias
+venv_version

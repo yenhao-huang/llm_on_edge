@@ -16,6 +16,7 @@ import AppKit
 
 struct MessageListView: View {
   @Binding var messages: [Message]
+  @ObservedObject var speechManager: SpeechManager
   @State private var showScrollToBottomButton = false
   @State private var userHasScrolled = false
   #if os(iOS)
@@ -27,7 +28,7 @@ struct MessageListView: View {
       ScrollView {
         VStack {
           ForEach(messages) { message in
-            MessageView(message: message)
+            MessageView(message: message, speechManager: speechManager)
               .padding([.leading, .trailing], 20)
           }
           GeometryReader { geometry -> Color in
