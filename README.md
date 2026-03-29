@@ -97,6 +97,23 @@ The app supports models whose `.pte` filename starts with the corresponding pref
 
 Pre-exported models are available on [HuggingFace executorch-community](https://huggingface.co/executorch-community).
 
+## Text-to-Speech (TTS)
+
+The app includes neural TTS powered by **Qwen3-TTS** via [TTSKit](https://github.com/argmaxinc/WhisperKit). When the model is unavailable it falls back to `AVSpeechSynthesizer`.
+
+### How it works
+
+- **Backend:** `TTSKit` (a product of `argmaxinc/WhisperKit`), model `qwen3TTS_0_6b`
+- **Model download:** ~1 GB CoreML model, downloaded automatically from HuggingFace on first `loadModel()` call
+- **Fallback:** `AVSpeechSynthesizer` is used until the neural model finishes loading
+
+### Verify TTS pipeline
+
+```bash
+cd ~/Library/Developer/Xcode/DerivedData/etLLM-*/SourcePackages/checkouts/whisperkit
+swift run whisperkit-cli tts --text "Hello, TTSKit works!" --play
+```
+
 ## Platform Requirements
 
 | | iOS | macOS |

@@ -90,3 +90,31 @@ Download already exported LLMs along with tokenizers from [HuggingFace](https://
 
 ​​​
 For more details check out the [Using ExecuTorch on iOS](https://docs.pytorch.org/executorch/1.0/using-executorch-ios.html) page.
+
+## Text-to-Speech (TTS)
+
+The app includes neural TTS powered by **Qwen3-TTS** via [TTSKit](https://github.com/argmaxinc/WhisperKit) (a product of the `argmaxinc/WhisperKit` package). When a TTS model is unavailable, the app falls back to `AVSpeechSynthesizer`.
+
+### How it works
+
+- **Model:** `qwen3TTS_0_6b` — downloaded on first use via `TTSKit` from HuggingFace (~1 GB CoreML model)
+- **Loading:** Call `speechManager.loadModel()` to trigger the download. This happens automatically on first launch; allow a few minutes to complete.
+- **Playback:** After the model loads, any LLM response can be read aloud via the speak button.
+- **Fallback:** If the model has not loaded yet, the app uses the system `AVSpeechSynthesizer` instead.
+
+### First-time setup
+
+On first launch the app downloads the CoreML model in the background. You can verify the pipeline works independently using the WhisperKit CLI:
+
+```bash
+cd ~/Library/Developer/Xcode/DerivedData/etLLM-*/SourcePackages/checkouts/whisperkit
+swift run whisperkit-cli tts --text "Hello, TTSKit works!" --play
+```
+
+### Platform notes
+
+| | iOS | macOS |
+|---|---|---|
+| TTS backend | TTSKit (Qwen3-TTS CoreML) + AVSpeech fallback | TTSKit (Qwen3-TTS CoreML) + AVSpeech fallback |
+| Model download | Automatic on first `loadModel()` call | Automatic on first `loadModel()` call |
+| Model size | ~1 GB | ~1 GB |
