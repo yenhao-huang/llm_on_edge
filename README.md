@@ -111,7 +111,7 @@ The app includes neural TTS powered by **Qwen3-TTS** via [TTSKit](https://github
 
 ```bash
 cd ~/Library/Developer/Xcode/DerivedData/etLLM-*/SourcePackages/checkouts/whisperkit
-swift run whisperkit-cli tts --text "Hello, TTSKit works!" --play
+swift run whisperkit-cli tts --text "Hello, ｀TTSKit works!" --play
 ```
 
 ## Platform Requirements

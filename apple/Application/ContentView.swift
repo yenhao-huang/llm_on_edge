@@ -195,6 +195,7 @@ struct ContentView: View {
   @StateObject private var resourceMonitor = ResourceMonitor()
   @StateObject private var logManager = LogManager()
   @StateObject private var speechManager = SpeechManager()
+  @StateObject private var speechRecognitionManager = SpeechRecognitionManager()
   @State private var autoSpeak = false
   @State private var isImagePickerPresented = false
   @State private var selectedImage: PlatformImage?
@@ -379,7 +380,15 @@ struct ContentView: View {
               .frame(width: 24, height: 24)
           }
           .buttonStyle(.plain)
-          
+
+          Button(action: {
+            if speechManager.isSpeaking { speechManager.stop() }
+            speechRecognitionManager.toggleRecording()
+          }) {
+            MicButtonView(state: speechRecognitionManager.recordingState)
+          }
+          .buttonStyle(.plain)
+
           if resourceManager.isModelValid && ModelType.fromPath(resourceManager.modelPath) == .qwen3 {
             Button(action: {
               thinkingMode.toggle()
@@ -478,6 +487,12 @@ struct ContentView: View {
         }
       }
       Task { await speechManager.loadModel() }
+      Task { await speechRecognitionManager.loadModelIfNeeded() }
+      speechRecognitionManager.onTranscription = { transcribed in
+        prompt = transcribed
+        textFieldFocused = false
+        generate()
+      }
     }
   }
   #endif
@@ -559,6 +574,15 @@ struct ContentView: View {
             .background(Color.clear)
             .cornerRadius(8)
 
+            Button(action: {
+              if speechManager.isSpeaking { speechManager.stop() }
+              speechRecognitionManager.toggleRecording()
+            }) {
+              MicButtonView(state: speechRecognitionManager.recordingState)
+            }
+            .background(Color.clear)
+            .cornerRadius(8)
+
             if resourceManager.isModelValid && ModelType.fromPath(resourceManager.modelPath) == .qwen3 {
               Button(action: {
                 thinkingMode.toggle()
@@ -606,7 +630,7 @@ struct ContentView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(height: 28)
             }
-            .disabled(isGenerating ? shouldStopGenerating : (!isInputEnabled || prompt.isEmpty))
+            .disabled(isGenerating ? shouldStopGenerating : (!isInputEnabled || prompt.isEmpty || speechRecognitionManager.recordingState == .transcribing))
           }
           .padding([.leading, .trailing, .bottom], 10)
         }
@@ -682,6 +706,12 @@ struct ContentView: View {
           }
         }
         Task { await speechManager.loadModel() }
+        Task { await speechRecognitionManager.loadModelIfNeeded() }
+        speechRecognitionManager.onTranscription = { transcribed in
+          prompt = transcribed
+          textFieldFocused = false
+          generate()
+        }
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
@@ -715,6 +745,7 @@ struct ContentView: View {
 
   private func generate() {
     guard !prompt.isEmpty else { return }
+    guard speechRecognitionManager.recordingState != .recording else { return }
     isGenerating = true
     shouldStopGenerating = false
     shouldStopShowingToken = false
@@ -1246,6 +1277,51 @@ extension ContentView {
           }
         }
       }
+    }
+  }
+}
+
+private struct MicButtonView: View {
+  let state: SpeechRecognitionManager.RecordingState
+  @State private var isAnimating = false
+
+  var body: some View {
+    ZStack {
+      if case .recording = state {
+        Circle()
+          .stroke(Color.red.opacity(0.4), lineWidth: 2)
+          .frame(width: 34, height: 34)
+          .scaleEffect(isAnimating ? 1.4 : 1.0)
+          .opacity(isAnimating ? 0 : 1)
+          .animation(.easeOut(duration: 0.9).repeatForever(autoreverses: false), value: isAnimating)
+          .onAppear { isAnimating = true }
+          .onDisappear { isAnimating = false }
+      }
+      Image(systemName: iconName)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 24, height: 24)
+        .foregroundColor(iconColor)
+    }
+    .frame(width: 34, height: 34)
+  }
+
+  private var iconName: String {
+    switch state {
+    case .recording:        return "mic.fill"
+    case .transcribing:     return "waveform"
+    case .loadingModel:     return "arrow.down.circle"
+    case .permissionDenied: return "mic.slash"
+    case .error:            return "exclamationmark.triangle"
+    default:                return "mic"
+    }
+  }
+
+  private var iconColor: Color {
+    switch state {
+    case .recording:    return .red
+    case .transcribing: return .orange
+    default:            return .primary
     }
   }
 }

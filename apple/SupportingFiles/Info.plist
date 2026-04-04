@@ -4,5 +4,7 @@
 <dict>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Voice input to transcribe speech into text prompts</string>
 </dict>
 </plist>
