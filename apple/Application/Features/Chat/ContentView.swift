@@ -127,6 +127,22 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
 
+        Button(action: { viewModel.toggleVoiceClone() }) {
+          HStack {
+            VoiceCloneButtonView(
+              isLoading: viewModel.isLoadingVoiceClone,
+              isEnabled: viewModel.voiceCloneEnabled
+            )
+            .frame(width: 24, height: 24)
+            Text("Voice Clone")
+            Spacer()
+          }
+          .padding(8)
+          .background(viewModel.voiceCloneEnabled ? Color.purple.opacity(0.1) : Color.gray.opacity(0.1))
+          .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+
         Button(action: {
           if viewModel.speechRecognitionManager.isLiveMode {
             viewModel.speechRecognitionManager.stopLiveMode()
@@ -483,6 +499,12 @@ struct ContentView: View {
             Button(action: { viewModel.autoSpeak.toggle() }) {
               Image(systemName: viewModel.autoSpeak ? "speaker.wave.2.fill" : "speaker.slash")
                 .foregroundColor(viewModel.autoSpeak ? .blue : .primary)
+            }
+            Button(action: { viewModel.toggleVoiceClone() }) {
+              VoiceCloneButtonView(
+                isLoading: viewModel.isLoadingVoiceClone,
+                isEnabled: viewModel.voiceCloneEnabled
+              )
             }
           }
       )

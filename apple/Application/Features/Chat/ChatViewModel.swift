@@ -28,6 +28,8 @@ class ChatViewModel: ObservableObject {
   @Published var prompt = ""
   @Published var thinkingMode = false
   @Published var autoSpeak = false
+  @Published var voiceCloneEnabled = false
+  @Published var isLoadingVoiceClone = false
   @Published var selectedImage: PlatformImage?
 
   let resourceManager = ResourceManager()
@@ -134,7 +136,11 @@ class ChatViewModel: ObservableObject {
             switch last.type {
             case .llamagenerated, .llavagenerated, .qwengenerated, .qwen3_5generated,
                  .phi4generated, .gemma3generated, .smollm3generated, .voxtralgenerated:
-              self.speechManager.speak(last.text)
+              if self.voiceCloneEnabled {
+                self.speechManager.speakWithClonedVoice(last.text)
+              } else {
+                self.speechManager.speak(last.text)
+              }
             default: break
             }
           }
@@ -264,6 +270,38 @@ class ChatViewModel: ObservableObject {
     case .qwen3_5:  return .qwen3_5generated
     case .smollm3:  return .smollm3generated
     case .voxtral:  return .voxtralgenerated
+    }
+  }
+
+  // MARK: - Voice Clone
+
+  func toggleVoiceClone() {
+    if voiceCloneEnabled {
+      voiceCloneEnabled = false
+      return
+    }
+    guard !isLoadingVoiceClone else { return }
+    isLoadingVoiceClone = true
+    Task {
+      await speechManager.loadVoiceCloneModel()
+      guard speechManager.isVoiceCloneLoaded else {
+        print("[ChatViewModel] ❌ Voice clone model failed to load — aborting")
+        isLoadingVoiceClone = false
+        return
+      }
+      guard let url = Bundle.main.url(forResource: "voice_clone", withExtension: "m4a") else {
+        print("[ChatViewModel] ❌ voice_clone.m4a not found in bundle — add it to the Xcode target")
+        isLoadingVoiceClone = false
+        return
+      }
+      await speechManager.setReferenceVoice(url: url)
+      guard speechManager.isEmbeddingReady else {
+        print("[ChatViewModel] ❌ Speaker embedding extraction failed")
+        isLoadingVoiceClone = false
+        return
+      }
+      isLoadingVoiceClone = false
+      voiceCloneEnabled = true
     }
   }
 
