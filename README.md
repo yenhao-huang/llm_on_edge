@@ -1,4 +1,4 @@
-# llm-on-iphone
+# LLM-on-IOS
 
 Run LLMs natively on iOS and macOS with voice chat support.
 
