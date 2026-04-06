@@ -428,7 +428,7 @@ struct ContentView: View {
               guard !newValue.isEmpty else { return }
               if let key = viewModel.currentPreloadKey(), key != viewModel.lastPreloadedKey {
                 viewModel.lastPreloadedKey = key
-                viewModel.loadModelIfNeededAsync(reportToUI: false)
+                viewModel.loadModelIfNeededAsync()
               }
             }
 

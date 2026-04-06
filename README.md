@@ -20,6 +20,8 @@ pip install '.[dev]'
 source /Users/yenhaohuang/Desktop/python-venvs/llm_on_ios/bin/activate
 ```
 
+
+
 ## Project Structure
 
 | Directory | Description |
@@ -33,13 +35,19 @@ source /Users/yenhaohuang/Desktop/python-venvs/llm_on_ios/bin/activate
 
 ### 1. Export model to ExecuTorch
 
-Download and export Qwen3-0.6B with XNNPACK backend and 8-bit quantization:
+a. Download and export Qwen3-0.6B with XNNPACK backend and 8-bit quantization:
 
 ```bash
-bash export_to_executorch/download_qwen.sh
+bash export_to_executorch/export_qwen_0.6b.sh
 ```
 
 Output: `qwen3_0.6b_executorch/model.pte`
+
+b. export Qwen3.5 (source path: examples/models/qwen3_5/)
+```bash
+git clone org-21003710@github.com:pytorch/executorch.git
+bash export_to_executorch/export_qwen35.sh
+```
 
 ### 2. Validate the export
 

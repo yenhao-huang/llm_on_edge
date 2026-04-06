@@ -20,6 +20,7 @@ enum MessageType {
   case prompted
   case llamagenerated
   case qwengenerated
+  case qwen3_5generated
   case phi4generated
   case gemma3generated
   case llavagenerated

@@ -21,7 +21,7 @@ struct MessageView: View {
   var body: some View {
     let isAssistant = {
       switch message.type {
-      case .llamagenerated, .llavagenerated, .qwengenerated, .phi4generated, .gemma3generated, .smollm3generated, .voxtralgenerated:
+      case .llamagenerated, .llavagenerated, .qwengenerated, .qwen3_5generated, .phi4generated, .gemma3generated, .smollm3generated, .voxtralgenerated:
         return true
       default:
         return false
@@ -44,6 +44,7 @@ struct MessageView: View {
               case .llavagenerated: return "LLaVA"
               case .phi4generated: return "Phi-4"
               case .qwengenerated: return "Qwen 3"
+              case .qwen3_5generated: return "Qwen 3.5"
               case .smollm3generated: return "SmolLM3"
               case .voxtralgenerated: return "Voxtral"
               default: return "Prompt"

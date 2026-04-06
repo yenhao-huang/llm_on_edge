@@ -21,7 +21,7 @@ final class SpeechRecognitionManager: ObservableObject {
   var onTranscription: ((String) -> Void)?
 
   private var whisperKit: WhisperKit?
-  private let modelName = "openai_whisper-base"
+  private let modelName = "openai_whisper-large-v3"
   private var recordingTask: Task<Void, Never>?
   private var silenceDetectionTask: Task<Void, Never>?
 
@@ -38,6 +38,7 @@ final class SpeechRecognitionManager: ObservableObject {
   func loadModelIfNeeded() async {
     guard whisperKit == nil else { return }
     print("[STT] Loading WhisperKit model...")
+    print("[STT] Model path: \(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml/\(modelName)").path)")
     recordingState = .loadingModel(progress: 0.0)
     do {
       let config = WhisperKitConfig(
@@ -51,7 +52,7 @@ final class SpeechRecognitionManager: ObservableObject {
       let kit = try await WhisperKit(config)
       whisperKit = kit
       recordingState = .readyToRecord
-      print("[STT] WhisperKit loaded successfully")
+      print("[STT] WhisperKit loaded successfully (model: \(modelName))")
     } catch {
       print("[STT] Failed to load WhisperKit: \(error)")
       recordingState = .error("Failed to load STT model: \(error.localizedDescription)")
