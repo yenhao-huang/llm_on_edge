@@ -26,7 +26,7 @@ final class SpeechRecognitionManager: ObservableObject {
   private var silenceDetectionTask: Task<Void, Never>?
 
   // Silence detection config
-  let silenceTimeout: Double = 5.0
+  let silenceTimeout: Double = 1
   private let checkInterval: Double = 0.3
   // Samples used to calibrate baseline noise (~1s at 16kHz)
   private let calibrationSamples = 16000

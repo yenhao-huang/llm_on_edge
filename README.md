@@ -1,20 +1,23 @@
 # llm-on-iphone
 
-Run LLMs natively on iOS and macOS with voice chat support, powered by [ExecuTorch](https://pytorch.org/executorch/).
+Run LLMs natively on iOS and macOS with voice chat support.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│                  iOS / macOS App            │
-│                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │   ASR    │  │   LLM    │  │   TTS    │  │
-│  │WhisperKit│→ │ExecuTorch│→ │  TTSKit  │  │
-│  └──────────┘  └──────────┘  └──────────┘  │
-└─────────────────────────────────────────────┘
-         ↑
-HuggingFace model → optimum-executorch → .pte
+┌─────────────────────────────────────────────────────────────┐
+│                 View Layer                                  │
+│  ContentView · MessageView · MIC/Image                      │
+├─────────────────────────────────────────────────────────────┤
+│                 Chat ViewModel                              │
+├────────────────────────────────--───────────────────────────┤
+│                 Service Layer                               │
+│  ASR         │  LLM Generation  │  TTS                      │
+│  WhisperKit  │  LLMGeneration   │  TTSKit / AVSpeech        │
+├──────────────┴──────────────────┴───────────────────────────┤
+│                 Model Layer                                 │
+│          ExecuTorch · optimum-executorch · CoreML           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Features

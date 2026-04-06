@@ -66,6 +66,17 @@ enum LLMGenerationError: LocalizedError {
   }
 }
 
+// MARK: - Output Parser
+
+enum OutputParser {
+  /// Characters to strip from generated text before display.
+  static let blacklist: Set<Character> = ["*", "_", "`", "~"]
+
+  static func parse(_ text: String) -> String {
+    String(text.filter { !blacklist.contains($0) })
+  }
+}
+
 // MARK: - LLM Generation Service
 
 class LLMGenerationService {
@@ -137,7 +148,7 @@ class LLMGenerationService {
     var tokens: [String] = []
 
     func flush() -> (text: String, count: Int) {
-      let t = tokens.joined(); let c = tokens.count; tokens = []; return (t, c)
+      let t = OutputParser.parse(tokens.joined()); let c = tokens.count; tokens = []; return (t, c)
     }
 
     if (modelType == .llava || modelType == .gemma3), let image = image {

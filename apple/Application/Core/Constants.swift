@@ -14,7 +14,7 @@ public enum Constants {
     "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n%@<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
   public static let llavaPromptTemplate = "USER: %@ ASSISTANT: "
   public static let phi4PromptTemplate = "<|user|>%@<|end|><|assistant|>"
-  public static let qwen3PromptTemplate = "<|im_start|>system\nYou are a helpful assistant.\n<|im_end|>\n<|im_start|>user\n%@<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n\n"
+  public static let qwen3PromptTemplate = "<|im_start|>system\nYou are a friendly assistant. Talk like a close friend — casual, warm, and to the point. Keep answers short under 20 words. When giving suggestions or tips, give at most 3.\n<|im_end|>\n<|im_start|>user\n%@<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n\n"
   public static let smolLm3PromptTemplate =
     "<|im_start|>system\n/no_think\n<|im_end|>\n<|im_start|>user\n%@<|im_end|>\n<|im_start|>assistant\n"
   public static let voxtralPromptTemplate = "%@[/INST]"

@@ -1,23 +1,114 @@
 import Foundation
 import TTSKit
 import CosyVoiceTTS
+import Qwen3TTS
 import AudioCommon
 import AVFoundation
+
+// MARK: - Voice Clone Backend Type
+
+enum VoiceCloneBackendType: String, CaseIterable {
+  case cosyVoice = "CosyVoice3"
+  case qwen3TTS  = "Qwen3-TTS"
+}
+
+// MARK: - Private helpers
+
+private enum VoiceCloneError: Error {
+  case modelNotLoaded
+  case referenceNotReady
+}
+
+private protocol VoiceCloneBackend: AnyObject {
+  var isLoaded: Bool { get }
+  var isReferenceReady: Bool { get }
+  var outputSampleRate: Int { get }
+  func loadModel() async throws
+  func setReferenceVoice(url: URL, referenceText: String) async throws
+  func synthesize(text: String, language: String) throws -> [Float]
+}
+
+// MARK: - CosyVoice Backend
+
+private final class CosyVoiceCloneBackend: VoiceCloneBackend {
+  private var cosyModel: CosyVoiceTTSModel?
+  private var camSpeaker: CamPlusPlusSpeaker?
+  private var clonedEmbedding: [Float]?
+
+  var isLoaded: Bool { cosyModel != nil && camSpeaker != nil }
+  var isReferenceReady: Bool { clonedEmbedding != nil }
+  var outputSampleRate: Int { 24000 }
+
+  func loadModel() async throws {
+    async let cosy = CosyVoiceTTSModel.fromPretrained()
+    async let cam  = CamPlusPlusSpeaker.fromPretrained()
+    (cosyModel, camSpeaker) = try await (cosy, cam)
+  }
+
+  func setReferenceVoice(url: URL, referenceText: String) async throws {
+    guard let speaker = camSpeaker else { throw VoiceCloneError.modelNotLoaded }
+    let audio = try AudioFileLoader.load(url: url, targetSampleRate: 16000)
+    clonedEmbedding = try speaker.embed(audio: audio, sampleRate: 16000)
+  }
+
+  func synthesize(text: String, language: String) throws -> [Float] {
+    guard let model = cosyModel, let embedding = clonedEmbedding else {
+      throw VoiceCloneError.referenceNotReady
+    }
+    return model.synthesize(text: text, language: language, speakerEmbedding: embedding)
+  }
+}
+
+// MARK: - Qwen3TTS Backend
+
+private final class Qwen3TTSVoiceCloneBackend: VoiceCloneBackend {
+  private var model: Qwen3TTSModel?
+  private var encoder: SpeechTokenizerEncoder?
+  private var referenceAudio: [Float]?
+  private var storedReferenceText: String = ""
+
+  var isLoaded: Bool { model != nil && encoder != nil }
+  var isReferenceReady: Bool { referenceAudio != nil }
+  var outputSampleRate: Int { 24000 }
+
+  func loadModel() async throws {
+    let (m, e) = try await Qwen3TTSModel.fromPretrainedWithEncoder()
+    model = m
+    encoder = e
+  }
+
+  func setReferenceVoice(url: URL, referenceText: String) async throws {
+    referenceAudio = try AudioFileLoader.load(url: url, targetSampleRate: 24000)
+    storedReferenceText = referenceText
+  }
+
+  func synthesize(text: String, language: String) throws -> [Float] {
+    guard let model, let encoder, let refAudio = referenceAudio else {
+      throw VoiceCloneError.referenceNotReady
+    }
+    return model.synthesizeWithVoiceCloneICL(
+      text: text,
+      referenceAudio: refAudio,
+      referenceSampleRate: 24000,
+      referenceText: storedReferenceText,
+      language: language,
+      codecEncoder: encoder
+    )
+  }
+}
+
+// MARK: - SpeechManager
 
 @MainActor
 final class SpeechManager: ObservableObject {
   @Published var isSpeaking = false
   @Published var isVoiceCloneLoaded = false
 
-  var isEmbeddingReady: Bool { clonedEmbedding != nil }
+  var isEmbeddingReady: Bool { activeBackend?.isReferenceReady == true }
 
   private var tts: TTSKit?
   private var currentTask: Task<Void, Never>?
-
-  // Voice clone state
-  private var cosyModel: CosyVoiceTTSModel?
-  private var camSpeaker: CamPlusPlusSpeaker?
-  private var clonedEmbedding: [Float]?
+  private var activeBackend: (any VoiceCloneBackend)?
 
   func loadModel() async {
     guard tts == nil else { return }
@@ -32,46 +123,47 @@ final class SpeechManager: ObservableObject {
 
   // MARK: - Voice Clone
 
-  /// Load CosyVoice3 + CAM++ speaker encoder for voice cloning.
-  func loadVoiceCloneModel() async {
-    guard cosyModel == nil else { return }
-    print("[SpeechManager] Loading CosyVoice3 + CAM++ models...")
+  func loadVoiceCloneModel(backend: VoiceCloneBackendType = .cosyVoice) async {
+    let newBackend: any VoiceCloneBackend
+    switch backend {
+    case .cosyVoice:
+      if activeBackend is CosyVoiceCloneBackend, activeBackend?.isLoaded == true { return }
+      newBackend = CosyVoiceCloneBackend()
+    case .qwen3TTS:
+      if activeBackend is Qwen3TTSVoiceCloneBackend, activeBackend?.isLoaded == true { return }
+      newBackend = Qwen3TTSVoiceCloneBackend()
+    }
+    print("[SpeechManager] Loading voice clone model (\(backend.rawValue))...")
     do {
-      async let cosy = CosyVoiceTTSModel.fromPretrained()
-      async let cam = CamPlusPlusSpeaker.fromPretrained()
-      (cosyModel, camSpeaker) = try await (cosy, cam)
-      print("[SpeechManager] Voice clone models loaded successfully")
+      try await newBackend.loadModel()
+      activeBackend = newBackend
       isVoiceCloneLoaded = true
+      print("[SpeechManager] Voice clone model loaded successfully")
     } catch {
-      print("[SpeechManager] Failed to load voice clone models: \(error)")
+      print("[SpeechManager] Failed to load voice clone model: \(error)")
     }
   }
 
-  /// Set the reference audio URL for voice cloning.
-  /// Extracts a 192-dim CAM++ speaker embedding from the audio file.
-  func setReferenceVoice(url: URL) async {
-    guard let speaker = camSpeaker else {
-      print("[SpeechManager] ⚠️ setReferenceVoice() skipped — CAM++ model not loaded")
+  func setReferenceVoice(url: URL, referenceText: String = "") async {
+    guard let backend = activeBackend else {
+      print("[SpeechManager] ⚠️ setReferenceVoice() skipped — backend not loaded")
       return
     }
     do {
-      let refAudio = try AudioFileLoader.load(url: url, targetSampleRate: 16000)
-      clonedEmbedding = try speaker.embed(audio: refAudio, sampleRate: 16000)
-      print("[SpeechManager] ✅ Speaker embedding extracted (\(clonedEmbedding?.count ?? 0) dims)")
+      try await backend.setReferenceVoice(url: url, referenceText: referenceText)
+      print("[SpeechManager] ✅ Speaker reference set")
     } catch {
-      print("[SpeechManager] ❌ Failed to extract speaker embedding: \(error)")
+      print("[SpeechManager] ❌ Failed to set reference voice: \(error)")
     }
   }
 
-  /// Speak using cloned voice if embedding is available, otherwise fall back to TTSKit.
   func speakWithClonedVoice(_ text: String, language: String = "english") {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else {
       print("[SpeechManager] ⚠️ speakWithClonedVoice() skipped — empty text")
       return
     }
-
-    guard let model = cosyModel, let embedding = clonedEmbedding else {
+    guard let backend = activeBackend, backend.isReferenceReady else {
       print("[SpeechManager] ⚠️ Voice clone not ready — falling back to TTSKit")
       speak(trimmed)
       return
@@ -81,14 +173,10 @@ final class SpeechManager: ObservableObject {
     currentTask = Task {
       isSpeaking = true
       defer { isSpeaking = false }
-      let samples = model.synthesize(
-        text: trimmed,
-        language: language,
-        speakerEmbedding: embedding
-      )
-      guard !samples.isEmpty, !Task.isCancelled else { return }
       do {
-        try await playPCM(samples: samples, sampleRate: 24000)
+        let samples = try backend.synthesize(text: trimmed, language: language)
+        guard !samples.isEmpty, !Task.isCancelled else { return }
+        try await playPCM(samples: samples, sampleRate: backend.outputSampleRate)
       } catch {
         if !(error is CancellationError) {
           print("[SpeechManager] ❌ Voice clone playback error: \(error)")

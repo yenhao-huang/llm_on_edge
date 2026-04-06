@@ -30,6 +30,8 @@ class ChatViewModel: ObservableObject {
   @Published var autoSpeak = false
   @Published var voiceCloneEnabled = false
   @Published var isLoadingVoiceClone = false
+  @Published var voiceCloneBackendType: VoiceCloneBackendType = .qwen3TTS
+  @Published var voiceCloneReferenceText: String = ""
   @Published var selectedImage: PlatformImage?
 
   let resourceManager = ResourceManager()
@@ -283,7 +285,7 @@ class ChatViewModel: ObservableObject {
     guard !isLoadingVoiceClone else { return }
     isLoadingVoiceClone = true
     Task {
-      await speechManager.loadVoiceCloneModel()
+      await speechManager.loadVoiceCloneModel(backend: voiceCloneBackendType)
       guard speechManager.isVoiceCloneLoaded else {
         print("[ChatViewModel] ❌ Voice clone model failed to load — aborting")
         isLoadingVoiceClone = false
@@ -294,7 +296,7 @@ class ChatViewModel: ObservableObject {
         isLoadingVoiceClone = false
         return
       }
-      await speechManager.setReferenceVoice(url: url)
+      await speechManager.setReferenceVoice(url: url, referenceText: voiceCloneReferenceText)
       guard speechManager.isEmbeddingReady else {
         print("[ChatViewModel] ❌ Speaker embedding extraction failed")
         isLoadingVoiceClone = false
